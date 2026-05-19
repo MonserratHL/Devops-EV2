@@ -3,8 +3,13 @@ output "frontend_public_ip" {
   value       = aws_instance.frontend.public_ip
 }
 
+output "backend_public_ip" {
+  description = "IP publica del EC2 backend (SSH y administracion)"
+  value       = aws_instance.backend.public_ip
+}
+
 output "backend_private_ip" {
-  description = "IP privada del backend (subred privada)"
+  description = "IP privada del backend (proxy nginx del frontend)"
   value       = aws_instance.backend.private_ip
 }
 
