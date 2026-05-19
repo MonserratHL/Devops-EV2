@@ -1,6 +1,7 @@
 # Ignorar todo excepto proyecto semestral y CI/CD
 *
 !.gitignore
+!README.md
 !proyecto semestral/
 !proyecto semestral/**
 !.github/
