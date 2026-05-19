@@ -1,0 +1,30 @@
+services:
+  backend-ventas:
+    image: ${ECR_REGISTRY}/innovatech-backend-ventas:latest
+    container_name: innovatech-backend-ventas
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: 3306
+      DB_ENDPOINT: ${DB_HOST}
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8080:8080"
+    network_mode: host
+
+  backend-despachos:
+    image: ${ECR_REGISTRY}/innovatech-backend-despachos:latest
+    container_name: innovatech-backend-despachos
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: 3306
+      DB_ENDPOINT: ${DB_HOST}
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8081:8081"
+    network_mode: host
