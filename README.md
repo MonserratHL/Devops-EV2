@@ -45,13 +45,7 @@ flowchart TB
     NAT --- B
 ```
 
-<p align="center">
-  <img
-    src="https://raw.githubusercontent.com/MonserratHL/Devops-EV2/main/docs/arquitectura-aws.png"
-    alt="Diagrama de arquitectura AWS Innovatech Chile"
-    width="900"
-  />
-</p>
+![Diagrama de arquitectura AWS Innovatech Chile](docs/arquitectura-aws.png)
 
 > **Editar el diagrama visual:** [`docs/arquitectura-aws.drawio`](docs/arquitectura-aws.drawio) en [diagrams.net](https://app.diagrams.net) (libreria AWS19). Exporta PNG y reemplaza `docs/arquitectura-aws.png`.
 
