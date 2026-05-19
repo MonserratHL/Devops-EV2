@@ -1,0 +1,79 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: innovatech-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - innovatech-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backend-ventas:
+    build:
+      context: ./back-Ventas_SpringBoot/Springboot-API-REST
+    image: innovatech-backend-ventas:1.0
+    container_name: innovatech-backend-ventas
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_ENDPOINT: mysql
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - innovatech-net
+
+  backend-despachos:
+    build:
+      context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+    image: innovatech-backend-despachos:1.0
+    container_name: innovatech-backend-despachos
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_ENDPOINT: mysql
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - innovatech-net
+
+  frontend:
+    build:
+      context: ./front_despacho
+    image: innovatech-frontend:1.0
+    container_name: innovatech-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:8080"
+    depends_on:
+      - backend-ventas
+      - backend-despachos
+    networks:
+      - innovatech-net
+
+networks:
+  innovatech-net:
+    driver: bridge
+    name: innovatech-net
+
+volumes:
+  mysql_data:
+    name: innovatech-mysql-data
