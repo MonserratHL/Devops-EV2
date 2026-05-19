@@ -351,7 +351,7 @@ resource "aws_instance" "frontend" {
     #!/bin/bash
     set -e
     yum update -y
-    yum install -y docker
+    yum install -y docker openssh-clients
     systemctl start docker
     systemctl enable docker
     usermod -aG docker ec2-user

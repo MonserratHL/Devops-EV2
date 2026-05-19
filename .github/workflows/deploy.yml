@@ -70,7 +70,17 @@ jobs:
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 
-      - name: Desplegar backend en EC2 (subred privada via bastion)
+      - name: Verificar SSH al frontend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_FRONTEND_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 60s
+          script: echo "SSH al frontend OK"
+
+      - name: Desplegar backend en EC2 (subred privada via frontend)
         uses: appleboy/ssh-action@v1.0.3
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -79,37 +89,41 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.EC2_DB_PRIVATE_IP }}
+          BACKEND_IP: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
         with:
-          host: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
+          host: ${{ secrets.EC2_FRONTEND_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}
-          proxy_username: ec2-user
-          proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD,DB_HOST
+          port: 22
+          timeout: 60s
+          command_timeout: 15m
+          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD,DB_HOST,BACKEND_IP
           script: |
             set -e
-            echo "$ECR_PASSWORD" | sudo docker login --username AWS --password-stdin "$ECR_REGISTRY"
-            sudo docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
-            sudo docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ec2-user@"${BACKEND_IP}" /bin/bash <<REMOTE
+            set -e
+            echo "${ECR_PASSWORD}" | sudo docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+            sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
+            sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
             sudo docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
             sudo docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
             sudo docker run -d --name innovatech-backend-ventas --restart unless-stopped \
-              -e DB_HOST="$DB_HOST" -e DB_PORT=3306 -e DB_ENDPOINT="$DB_HOST" \
-              -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
-              -e DB_PASSWORD="$DB_PASSWORD" \
+              -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
+              -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
+              -e DB_PASSWORD="${DB_PASSWORD}" \
               --network host \
-              "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
+              "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
             sudo docker run -d --name innovatech-backend-despachos --restart unless-stopped \
-              -e DB_HOST="$DB_HOST" -e DB_PORT=3306 -e DB_ENDPOINT="$DB_HOST" \
-              -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
-              -e DB_PASSWORD="$DB_PASSWORD" \
+              -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
+              -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
+              -e DB_PASSWORD="${DB_PASSWORD}" \
               --network host \
-              "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
+              "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
             echo "Esperando APIs Spring Boot..."
             sleep 60
             curl -sf http://127.0.0.1:8080/api/v1/ventas > /dev/null && echo "API ventas OK" || sudo docker logs innovatech-backend-ventas --tail 20
             curl -sf http://127.0.0.1:8081/api/v1/despachos > /dev/null && echo "API despachos OK" || sudo docker logs innovatech-backend-despachos --tail 20
+            REMOTE
 
       - name: Desplegar frontend en EC2
         uses: appleboy/ssh-action@v1.0.3
