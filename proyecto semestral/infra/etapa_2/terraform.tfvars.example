@@ -1,0 +1,8 @@
+# Copia este archivo como terraform.tfvars y completa los valores
+# terraform.tfvars NO se sube a Git (contiene secretos)
+
+key_pair_name = "nombre-de-tu-key-pair-en-aws"
+db_password   = "tu_contraseña_mysql"
+db_name       = "innovatech_db"
+project_name  = "innovatech"
+aws_region    = "us-east-1"

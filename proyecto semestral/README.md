@@ -54,6 +54,8 @@ terraform apply
 
 ### Etapa 2 - VPC, EC2, Security Groups
 
+> **Importante:** Ejecuta primero `etapa_1` (ECR). La etapa 2 reutiliza esos repositorios y no los vuelve a crear.
+
 ```bash
 cd infra/etapa_2
 terraform init

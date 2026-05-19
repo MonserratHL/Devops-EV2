@@ -29,6 +29,11 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Obtener password de ECR para EC2
+        id: ecr-password
+        run: |
+          echo "password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" >> "$GITHUB_OUTPUT"
+
       - name: Build y push backend ventas
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -66,46 +71,57 @@ jobs:
           docker push "${IMAGE}:${{ github.sha }}"
 
       - name: Desplegar backend en EC2
+        uses: appleboy/ssh-action@v1.0.3
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        uses: appleboy/ssh-action@v1.0.3
+          ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD
           script: |
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-            docker pull ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-ventas:latest
-            docker pull ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-despachos:latest
+            set -e
+            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+            docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
+            docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
             docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
             docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
             docker run -d --name innovatech-backend-ventas --restart unless-stopped \
               -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
-              -e DB_NAME=${{ secrets.DB_NAME }} -e DB_USERNAME=root \
-              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
+              -e DB_PASSWORD="$DB_PASSWORD" \
               --network host \
-              ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-ventas:latest
+              "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
             docker run -d --name innovatech-backend-despachos --restart unless-stopped \
               -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
-              -e DB_NAME=${{ secrets.DB_NAME }} -e DB_USERNAME=root \
-              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
+              -e DB_PASSWORD="$DB_PASSWORD" \
               --network host \
-              ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-despachos:latest
+              "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
 
       - name: Desplegar frontend en EC2
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
+          BACKEND_HOST: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
         with:
           host: ${{ secrets.EC2_FRONTEND_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,BACKEND_HOST
           script: |
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-            docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:latest
+            set -e
+            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+            docker pull "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
             docker stop innovatech-frontend 2>/dev/null || true
             docker rm innovatech-frontend 2>/dev/null || true
             docker run -d --name innovatech-frontend --restart unless-stopped \
-              -e BACKEND_HOST=${{ secrets.EC2_BACKEND_PRIVATE_IP }} \
+              -e BACKEND_HOST="$BACKEND_HOST" \
               -p 80:8080 \
-              ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:latest
+              "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
