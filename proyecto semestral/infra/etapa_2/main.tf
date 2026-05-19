@@ -212,6 +212,7 @@ resource "aws_instance" "backend" {
     yum install -y docker
     systemctl start docker
     systemctl enable docker
+    usermod -aG docker ec2-user
 
     mkdir -p /data/mysql
     docker volume create innovatech-mysql-data || true
@@ -256,6 +257,7 @@ resource "aws_instance" "frontend" {
     yum install -y docker
     systemctl start docker
     systemctl enable docker
+    usermod -aG docker ec2-user
     echo "Instancia frontend lista para despliegue"
   EOF
 

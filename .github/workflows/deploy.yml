@@ -85,18 +85,18 @@ jobs:
           envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD
           script: |
             set -e
-            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-            docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
-            docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
-            docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
-            docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
-            docker run -d --name innovatech-backend-ventas --restart unless-stopped \
+            echo "$ECR_PASSWORD" | sudo docker login --username AWS --password-stdin "$ECR_REGISTRY"
+            sudo docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
+            sudo docker pull "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
+            sudo docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
+            sudo docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
+            sudo docker run -d --name innovatech-backend-ventas --restart unless-stopped \
               -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
               -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
               -e DB_PASSWORD="$DB_PASSWORD" \
               --network host \
               "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
-            docker run -d --name innovatech-backend-despachos --restart unless-stopped \
+            sudo docker run -d --name innovatech-backend-despachos --restart unless-stopped \
               -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
               -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
               -e DB_PASSWORD="$DB_PASSWORD" \
@@ -117,11 +117,11 @@ jobs:
           envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,BACKEND_HOST
           script: |
             set -e
-            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-            docker pull "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
-            docker stop innovatech-frontend 2>/dev/null || true
-            docker rm innovatech-frontend 2>/dev/null || true
-            docker run -d --name innovatech-frontend --restart unless-stopped \
+            echo "$ECR_PASSWORD" | sudo docker login --username AWS --password-stdin "$ECR_REGISTRY"
+            sudo docker pull "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
+            sudo docker stop innovatech-frontend 2>/dev/null || true
+            sudo docker rm innovatech-frontend 2>/dev/null || true
+            sudo docker run -d --name innovatech-frontend --restart unless-stopped \
               -e BACKEND_HOST="$BACKEND_HOST" \
               -p 80:8080 \
               "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
