@@ -78,11 +78,12 @@ jobs:
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.EC2_DB_PRIVATE_IP }}
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD
+          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD,DB_HOST
           script: |
             set -e
             echo "$ECR_PASSWORD" | sudo docker login --username AWS --password-stdin "$ECR_REGISTRY"
@@ -91,13 +92,13 @@ jobs:
             sudo docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
             sudo docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
             sudo docker run -d --name innovatech-backend-ventas --restart unless-stopped \
-              -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
+              -e DB_HOST="$DB_HOST" -e DB_PORT=3306 -e DB_ENDPOINT="$DB_HOST" \
               -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
               -e DB_PASSWORD="$DB_PASSWORD" \
               --network host \
               "$ECR_REGISTRY/$PROJECT_NAME-backend-ventas:latest"
             sudo docker run -d --name innovatech-backend-despachos --restart unless-stopped \
-              -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
+              -e DB_HOST="$DB_HOST" -e DB_PORT=3306 -e DB_ENDPOINT="$DB_HOST" \
               -e DB_NAME="$DB_NAME" -e DB_USERNAME=root \
               -e DB_PASSWORD="$DB_PASSWORD" \
               --network host \
