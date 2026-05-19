@@ -33,6 +33,7 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
+# Subred publica: solo frontend (acceso Internet)
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
@@ -44,6 +45,7 @@ resource "aws_subnet" "public" {
   }
 }
 
+# Subred privada: backend + base de datos (comunicacion interna)
 resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.2.0/24"
@@ -52,6 +54,25 @@ resource "aws_subnet" "private" {
   tags = {
     Name = "${var.project_name}-subnet-privada"
   }
+}
+
+resource "aws_eip" "nat" {
+  domain = "vpc"
+
+  tags = {
+    Name = "${var.project_name}-nat-eip"
+  }
+}
+
+resource "aws_nat_gateway" "main" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public.id
+
+  tags = {
+    Name = "${var.project_name}-nat"
+  }
+
+  depends_on = [aws_internet_gateway.main]
 }
 
 resource "aws_route_table" "public" {
@@ -67,9 +88,27 @@ resource "aws_route_table" "public" {
   }
 }
 
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.main.id
+  }
+
+  tags = {
+    Name = "${var.project_name}-rt-privada"
+  }
+}
+
 resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "private" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
 }
 
 ############################
@@ -78,7 +117,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "frontend" {
   name        = "${var.project_name}-sg-frontend"
-  description = "Solo frontend accesible desde Internet"
+  description = "Frontend accesible solo por HTTP/HTTPS desde Internet"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -111,7 +150,7 @@ resource "aws_security_group" "frontend" {
 
 resource "aws_security_group" "backend" {
   name        = "${var.project_name}-sg-backend"
-  description = "Backend y MySQL en subred privada"
+  description = "APIs Spring solo desde el frontend"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -138,14 +177,6 @@ resource "aws_security_group" "backend" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    description = "MySQL interno"
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    self        = true
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -158,8 +189,41 @@ resource "aws_security_group" "backend" {
   }
 }
 
+resource "aws_security_group" "database" {
+  name        = "${var.project_name}-sg-database"
+  description = "MySQL solo desde el backend"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "MySQL desde backend"
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend.id]
+  }
+
+  ingress {
+    description = "SSH administracion"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-sg-database"
+  }
+}
+
 ############################
-# ECR (creados en etapa_1, solo referencia)
+# ECR (creados en etapa_1)
 ############################
 
 data "aws_ecr_repository" "backend_ventas" {
@@ -189,7 +253,52 @@ data "aws_ami" "amazon_linux" {
 }
 
 ############################
-# EC2 Backend (subred publica sin exposicion de APIs a Internet)
+# EC2 Base de datos (subred privada)
+############################
+
+resource "aws_instance" "database" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.micro"
+  subnet_id              = aws_subnet.private.id
+  vpc_security_group_ids = [aws_security_group.database.id]
+  key_name               = var.key_pair_name
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+    yum update -y
+    yum install -y docker
+    systemctl start docker
+    systemctl enable docker
+    usermod -aG docker ec2-user
+
+    docker volume create innovatech-mysql-data || true
+
+    docker run -d \
+      --name mysql \
+      --restart unless-stopped \
+      -e MYSQL_ROOT_PASSWORD=${var.db_password} \
+      -e MYSQL_DATABASE=${var.db_name} \
+      -e MYSQL_ROOT_HOST=% \
+      -v innovatech-mysql-data:/var/lib/mysql \
+      -p 3306:3306 \
+      mysql:8
+
+    echo "MySQL iniciado en instancia de datos"
+  EOF
+
+  tags = {
+    Name = "${var.project_name}-database"
+  }
+}
+
+############################
+# EC2 Backend (subred publica, APIs solo desde frontend por SG)
 ############################
 
 resource "aws_instance" "backend" {
@@ -213,21 +322,10 @@ resource "aws_instance" "backend" {
     systemctl start docker
     systemctl enable docker
     usermod -aG docker ec2-user
-
-    mkdir -p /data/mysql
-    docker volume create innovatech-mysql-data || true
-
-    docker run -d \
-      --name mysql \
-      --restart unless-stopped \
-      -e MYSQL_ROOT_PASSWORD=${var.db_password} \
-      -e MYSQL_DATABASE=${var.db_name} \
-      -v innovatech-mysql-data:/var/lib/mysql \
-      -p 3306:3306 \
-      mysql:8
-
-    echo "MySQL iniciado en instancia backend"
+    echo "Instancia backend lista para despliegue"
   EOF
+
+  depends_on = [aws_instance.database]
 
   tags = {
     Name = "${var.project_name}-backend"
