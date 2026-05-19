@@ -9,30 +9,31 @@ Sistema de gestión de ventas y despachos contenedorizado con Docker, desplegado
                         |
                         v
               +-------------------+
-              |  EC2 Frontend   |  subred publica (10.0.1.0/24)
-              |  nginx + React  |  puerto 80 abierto a Internet
-              +--------+--------+
-                       | proxy :8080 / :8081 (IP privada backend)
+              |  EC2 Frontend     |  SUBRED PUBLICA (10.0.1.0/24)
+              |  nginx + React    |  unico punto de entrada HTTP :80
+              +--------+----------+
+                       | proxy :8080 / :8081 (IP privada)
                        v
               +-------------------+
-              |  EC2 Backend      |  subred publica (sin APIs expuestas a Internet)
-              |  Spring Boot x2   |  SG: solo frontend puede conectar
-              +--------+--------+
-                       | MySQL :3306 (IP privada BD)
+              |  EC2 Backend      |  SUBRED PRIVADA (10.0.2.0/24)
+              |  Spring Boot x2   |  sin IP publica
+              +--------+----------+
+                       | MySQL :3306 (IP privada)
                        v
               +-------------------+
-              |  EC2 Database     |  subred privada (10.0.2.0/24)
-              |  MySQL en Docker  |  SG: solo backend puede conectar
+              |  EC2 Database     |  SUBRED PRIVADA (10.0.2.0/24)
+              |  MySQL en Docker  |  sin IP publica
               +-------------------+
+         NAT Gateway (salida a ECR/Docker Hub)
 ```
 
-| EC2 en consola AWS | Rol | Subred | Puertos expuestos a Internet |
-|--------------------|-----|--------|------------------------------|
-| `innovatech-frontend` | React + nginx | Publica | Solo **80** (HTTP) |
-| `innovatech-backend` | APIs ventas/despachos | Publica* | **Ninguno** (solo SSH admin) |
-| `innovatech-database` | MySQL 8 en Docker | **Privada** | **Ninguno** (solo SSH admin) |
+| EC2 en consola AWS | Rol | Subred | Acceso desde Internet |
+|--------------------|-----|--------|------------------------|
+| `innovatech-frontend` | React + nginx | **Publica** | Solo puerto **80** |
+| `innovatech-backend` | APIs Spring | **Privada** | **Ninguno** |
+| `innovatech-database` | MySQL 8 | **Privada** | **Ninguno** |
 
-\*El backend esta en subred publica para que el pipeline pueda hacer SSH y pull desde ECR; el **Security Group** bloquea 8080/8081 desde Internet y solo permite trafico desde el SG del frontend.
+El pipeline CI/CD entra por SSH al **frontend** (bastion) y desde ahi despliega en el **backend privado**. El NAT Gateway permite pull de imagenes ECR desde las instancias privadas.
 
 ### Por que 3 EC2 es lo correcto para la evaluacion
 
@@ -43,11 +44,11 @@ Sistema de gestión de ventas y despachos contenedorizado con Docker, desplegado
 
 ### Ver la base de datos
 
-1. Consola AWS → **EC2** → instancia **`innovatech-database`**.
-2. Usa la IP publica de esa instancia (solo para SSH) o conecta desde el backend:
+1. Consola AWS → **EC2** → instancia **`innovatech-database`** (subred privada).
+2. Conectate via bastion (frontend):
 
 ```bash
-ssh -i mi-key-duoc.pem ec2-user@IP_PUBLICA_DATABASE
+ssh -i mi-key-duoc.pem -J ec2-user@IP_PUBLICA_FRONTEND ec2-user@IP_PRIVADA_DATABASE
 sudo docker exec -it mysql mysql -u root -p innovatech_db
 ```
 
@@ -131,8 +132,7 @@ terraform apply -var="key_pair_name=TU_KEY_PAIR" -var="db_password=TU_PASSWORD"
 | `AWS_ACCESS_KEY_ID` | Credencial AWS |
 | `AWS_SECRET_ACCESS_KEY` | Credencial AWS |
 | `AWS_SESSION_TOKEN` | Token de sesión (si aplica) |
-| `EC2_BACKEND_HOST` | IP **publica** del EC2 backend (para SSH del pipeline) |
-| `EC2_FRONTEND_HOST` | IP **publica** del EC2 frontend |
+| `EC2_FRONTEND_HOST` | IP **publica** del EC2 frontend (bastion SSH) |
 | `EC2_BACKEND_PRIVATE_IP` | IP **privada** del backend (`terraform output backend_private_ip`) |
 | `EC2_DB_PRIVATE_IP` | IP **privada** de la instancia database (`terraform output database_private_ip`) |
 | `EC2_SSH_PRIVATE_KEY` | Llave PEM para SSH |

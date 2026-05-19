@@ -70,7 +70,7 @@ jobs:
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 
-      - name: Desplegar backend en EC2
+      - name: Desplegar backend en EC2 (subred privada via bastion)
         uses: appleboy/ssh-action@v1.0.3
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -80,9 +80,12 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.EC2_DB_PRIVATE_IP }}
         with:
-          host: ${{ secrets.EC2_BACKEND_HOST }}
+          host: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}
+          proxy_username: ec2-user
+          proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD,DB_HOST
           script: |
             set -e

@@ -170,11 +170,11 @@ resource "aws_security_group" "backend" {
   }
 
   ingress {
-    description = "SSH administracion"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "SSH desde frontend (bastion para CI/CD)"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.frontend.id]
   }
 
   egress {
@@ -203,11 +203,11 @@ resource "aws_security_group" "database" {
   }
 
   ingress {
-    description = "SSH administracion"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "SSH desde frontend (bastion administracion)"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.frontend.id]
   }
 
   egress {
@@ -298,16 +298,15 @@ resource "aws_instance" "database" {
 }
 
 ############################
-# EC2 Backend (subred publica, APIs solo desde frontend por SG)
+# EC2 Backend (subred privada, sin IP publica)
 ############################
 
 resource "aws_instance" "backend" {
-  ami                         = data.aws_ami.amazon_linux.id
-  instance_type               = "t3.small"
-  subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.backend.id]
-  key_name                    = var.key_pair_name
-  associate_public_ip_address = true
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.small"
+  subnet_id              = aws_subnet.private.id
+  vpc_security_group_ids = [aws_security_group.backend.id]
+  key_name               = var.key_pair_name
 
   root_block_device {
     volume_size = 30

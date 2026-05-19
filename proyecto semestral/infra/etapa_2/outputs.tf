@@ -3,24 +3,14 @@ output "frontend_public_ip" {
   value       = aws_instance.frontend.public_ip
 }
 
-output "backend_public_ip" {
-  description = "IP publica del backend (SSH y despliegue CI/CD)"
-  value       = aws_instance.backend.public_ip
-}
-
 output "backend_private_ip" {
-  description = "IP privada del backend (proxy nginx del frontend)"
+  description = "IP privada del backend (proxy nginx y despliegue via bastion)"
   value       = aws_instance.backend.private_ip
 }
 
 output "database_private_ip" {
   description = "IP privada de MySQL (solo accesible desde backend)"
   value       = aws_instance.database.private_ip
-}
-
-output "database_public_ip" {
-  description = "IP publica de la instancia de datos (solo administracion SSH)"
-  value       = aws_instance.database.public_ip
 }
 
 output "ecr_backend_ventas_url" {
