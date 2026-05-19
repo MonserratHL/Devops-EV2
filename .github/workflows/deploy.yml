@@ -102,6 +102,10 @@ jobs:
               -e DB_PASSWORD="$DB_PASSWORD" \
               --network host \
               "$ECR_REGISTRY/$PROJECT_NAME-backend-despachos:latest"
+            echo "Esperando APIs Spring Boot..."
+            sleep 60
+            curl -sf http://127.0.0.1:8080/api/v1/ventas > /dev/null && echo "API ventas OK" || sudo docker logs innovatech-backend-ventas --tail 20
+            curl -sf http://127.0.0.1:8081/api/v1/despachos > /dev/null && echo "API despachos OK" || sudo docker logs innovatech-backend-despachos --tail 20
 
       - name: Desplegar frontend en EC2
         uses: appleboy/ssh-action@v1.0.3
