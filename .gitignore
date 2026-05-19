@@ -1,0 +1,24 @@
+# Ignorar todo excepto proyecto semestral y CI/CD
+*
+!.gitignore
+!proyecto semestral/
+!proyecto semestral/**
+!.github/
+!.github/**
+
+# Archivos de sistema y secretos
+.DS_Store
+*.pdf
+academia-302d-main/
+.env
+*.pem
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Dentro de proyecto semestral
+proyecto semestral/**/.DS_Store
+proyecto semestral/**/node_modules/
+proyecto semestral/**/target/
+proyecto semestral/**/.env
