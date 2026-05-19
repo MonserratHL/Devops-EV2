@@ -70,80 +70,75 @@ jobs:
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 
-      - name: Verificar SSH al frontend
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Configurar agente SSH
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ secrets.EC2_FRONTEND_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          port: 22
-          timeout: 60s
-          script: echo "SSH al frontend OK"
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
-      - name: Desplegar backend en EC2 (subred privada via frontend)
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Verificar SSH al frontend
         env:
+          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            ec2-user@"${FRONTEND_HOST}" "echo SSH al frontend OK"
+
+      - name: Desplegar backend en EC2 (subred privada via ProxyJump)
+        env:
+          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
+          BACKEND_IP: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.EC2_DB_PRIVATE_IP }}
-          BACKEND_IP: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
-        with:
-          host: ${{ secrets.EC2_FRONTEND_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 15m
-          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,DB_NAME,DB_PASSWORD,DB_HOST,BACKEND_IP
-          script: |
-            set -e
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ec2-user@"${BACKEND_IP}" /bin/bash <<REMOTE
-            set -e
-            echo "${ECR_PASSWORD}" | sudo docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-            sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
-            sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
-            sudo docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
-            sudo docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
-            sudo docker run -d --name innovatech-backend-ventas --restart unless-stopped \
-              -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
-              -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
-              -e DB_PASSWORD="${DB_PASSWORD}" \
-              --network host \
-              "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
-            sudo docker run -d --name innovatech-backend-despachos --restart unless-stopped \
-              -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
-              -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
-              -e DB_PASSWORD="${DB_PASSWORD}" \
-              --network host \
-              "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
-            echo "Esperando APIs Spring Boot..."
-            sleep 60
-            curl -sf http://127.0.0.1:8080/api/v1/ventas > /dev/null && echo "API ventas OK" || sudo docker logs innovatech-backend-ventas --tail 20
-            curl -sf http://127.0.0.1:8081/api/v1/despachos > /dev/null && echo "API despachos OK" || sudo docker logs innovatech-backend-despachos --tail 20
-            REMOTE
+        run: |
+          set -e
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            -J ec2-user@"${FRONTEND_HOST}" \
+            ec2-user@"${BACKEND_IP}" bash -s <<REMOTE
+          set -e
+          echo "${ECR_PASSWORD}" | sudo docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+          sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
+          sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
+          sudo docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
+          sudo docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
+          sudo docker run -d --name innovatech-backend-ventas --restart unless-stopped \
+            -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
+            -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
+            -e DB_PASSWORD="${DB_PASSWORD}" \
+            --network host \
+            "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
+          sudo docker run -d --name innovatech-backend-despachos --restart unless-stopped \
+            -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
+            -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
+            -e DB_PASSWORD="${DB_PASSWORD}" \
+            --network host \
+            "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
+          echo "Esperando APIs Spring Boot..."
+          sleep 60
+          curl -sf http://127.0.0.1:8080/api/v1/ventas > /dev/null && echo "API ventas OK" || sudo docker logs innovatech-backend-ventas --tail 20
+          curl -sf http://127.0.0.1:8081/api/v1/despachos > /dev/null && echo "API despachos OK" || sudo docker logs innovatech-backend-despachos --tail 20
+          REMOTE
 
       - name: Desplegar frontend en EC2
-        uses: appleboy/ssh-action@v1.0.3
         env:
+          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
           BACKEND_HOST: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
-        with:
-          host: ${{ secrets.EC2_FRONTEND_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: ECR_REGISTRY,ECR_PASSWORD,PROJECT_NAME,BACKEND_HOST
-          script: |
-            set -e
-            echo "$ECR_PASSWORD" | sudo docker login --username AWS --password-stdin "$ECR_REGISTRY"
-            sudo docker pull "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
-            sudo docker stop innovatech-frontend 2>/dev/null || true
-            sudo docker rm innovatech-frontend 2>/dev/null || true
-            sudo docker run -d --name innovatech-frontend --restart unless-stopped \
-              -e BACKEND_HOST="$BACKEND_HOST" \
-              -p 80:8080 \
-              "$ECR_REGISTRY/$PROJECT_NAME-frontend:latest"
+        run: |
+          set -e
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            ec2-user@"${FRONTEND_HOST}" bash -s <<REMOTE
+          set -e
+          echo "${ECR_PASSWORD}" | sudo docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+          sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-frontend:latest"
+          sudo docker stop innovatech-frontend 2>/dev/null || true
+          sudo docker rm innovatech-frontend 2>/dev/null || true
+          sudo docker run -d --name innovatech-frontend --restart unless-stopped \
+            -e BACKEND_HOST="${BACKEND_HOST}" \
+            -p 80:8080 \
+            "${ECR_REGISTRY}/${PROJECT_NAME}-frontend:latest"
+          REMOTE

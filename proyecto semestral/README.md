@@ -150,8 +150,19 @@ El pipeline en la rama `deploy` tuvo fallos iniciales que se corrigieron (trazab
 | `invalid reference format` | Variables no llegaban al EC2 por SSH | `envs:` + password ECR desde Actions |
 | `permission denied` docker.sock | `ec2-user` sin permisos | `sudo docker` en el script |
 | APIs 502 | Backends caidos o `DB_HOST` incorrecto | Secret `EC2_DB_PRIVATE_IP` + datos de ejemplo |
+| `unable to authenticate` SSH | IPs viejas tras reset del lab o PEM incorrecto | Actualizar secrets con `terraform output` y volver a pegar el `.pem` completo |
 
-Runs recientes exitosos: [Actions](https://github.com/MonserratHL/Devops-EV2/actions/workflows/deploy.yml).
+Tras el ultimo `terraform apply`, los valores de referencia son:
+
+| Output | Valor actual |
+|--------|----------------|
+| `frontend_public_ip` | `54.90.241.10` |
+| `backend_private_ip` | `10.0.2.148` |
+| `database_private_ip` | `10.0.2.231` |
+
+> **Importante:** `EC2_SSH_PRIVATE_KEY` debe ser el contenido completo del `.pem` usado en `key_pair_name` al crear las EC2. Tras un reset de AWS Academy, descarga de nuevo la llave o reutiliza la misma solo si el key pair no cambio.
+
+Runs recientes: [Actions](https://github.com/MonserratHL/Devops-EV2/actions/workflows/deploy.yml).
 
 ## Pipeline CI/CD
 
