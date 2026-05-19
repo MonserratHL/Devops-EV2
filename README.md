@@ -17,11 +17,9 @@ Repositorio: [MonserratHL/Devops-EV2](https://github.com/MonserratHL/Devops-EV2)
 
 Diagrama con iconografía al estilo **AWS Architecture Icons** (EC2, VPC, NAT, ECR, usuarios):
 
-<p align="center">
-  <img src="docs/arquitectura-aws.svg" alt="Diagrama de arquitectura AWS Innovatech Chile" width="100%"/>
-</p>
+![Diagrama de arquitectura AWS Innovatech Chile](docs/arquitectura-aws.png)
 
-> **Editar el diagrama:** abre [`docs/arquitectura-aws.drawio`](docs/arquitectura-aws.drawio) en [diagrams.net](https://app.diagrams.net) con la librería **AWS19** habilitada (Más formas → AWS).
+> **Editar el diagrama:** abre [`docs/arquitectura-aws.drawio`](docs/arquitectura-aws.drawio) en [diagrams.net](https://app.diagrams.net) (libreria **AWS19**) y exporta PNG a `docs/arquitectura-aws.png`.
 
 ### Flujo de comunicación en producción
 
@@ -42,7 +40,8 @@ Diagrama con iconografía al estilo **AWS Architecture Icons** (EC2, VPC, NAT, E
 Devops-EV2/
 ├── README.md                          # Documentacion principal (esta pagina)
 ├── docs/
-│   ├── arquitectura-aws.svg           # Diagrama (autocontenido, compatible GitHub)
+│   ├── arquitectura-aws.png           # Diagrama (visible en GitHub)
+│   ├── arquitectura-aws.svg           # Version vectorial
 │   └── arquitectura-aws.drawio        # Fuente editable draw.io
 ├── .github/workflows/
 │   ├── ci.yml                         # Integracion continua
@@ -286,7 +285,7 @@ Tras un **reset del Learner Lab**, actualiza las IPs con `terraform output` y vu
 | Página carga pero tablas vacías | APIs con 502 | Revisar logs en EC2 backend; verificar secrets `EC2_DB_PRIVATE_IP` y `DB_PASSWORD` |
 | `Permission denied (publickey)` en deploy | PEM o IP incorrectos | Actualizar secrets tras `terraform apply` |
 | CI falla con `Public Key Retrieval` | MySQL 8 + driver JDBC | Corregido con `allowPublicKeyRetrieval=true` en `application.properties` |
-| Diagrama no se ve en GitHub | SVG con URLs externas | Usar `docs/arquitectura-aws.svg` de este repo (autocontenido) |
+| Diagrama no se ve en GitHub | SVG bloqueado por sanitizador | Usar `docs/arquitectura-aws.png` en el README |
 | `terraform destroy` lento | NAT Gateway + EC2 | Normal en Learner Lab; esperar varios minutos |
 
 ### Conectar a MySQL en la instancia database
