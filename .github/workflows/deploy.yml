@@ -1,0 +1,111 @@
+name: Despliegue continuo
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: innovatech
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login en Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build y push backend ventas
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE="${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-ventas"
+          docker build --platform linux/amd64 \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${{ github.sha }}" \
+            "./proyecto semestral/back-Ventas_SpringBoot/Springboot-API-REST"
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:${{ github.sha }}"
+
+      - name: Build y push backend despachos
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE="${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-despachos"
+          docker build --platform linux/amd64 \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${{ github.sha }}" \
+            "./proyecto semestral/back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO"
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:${{ github.sha }}"
+
+      - name: Build y push frontend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE="${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-frontend"
+          docker build --platform linux/amd64 \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${{ github.sha }}" \
+            "./proyecto semestral/front_despacho"
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:${{ github.sha }}"
+
+      - name: Desplegar backend en EC2
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_BACKEND_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            docker pull ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-ventas:latest
+            docker pull ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-despachos:latest
+            docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
+            docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
+            docker run -d --name innovatech-backend-ventas --restart unless-stopped \
+              -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
+              -e DB_NAME=${{ secrets.DB_NAME }} -e DB_USERNAME=root \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              --network host \
+              ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-ventas:latest
+            docker run -d --name innovatech-backend-despachos --restart unless-stopped \
+              -e DB_HOST=127.0.0.1 -e DB_PORT=3306 -e DB_ENDPOINT=127.0.0.1 \
+              -e DB_NAME=${{ secrets.DB_NAME }} -e DB_USERNAME=root \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              --network host \
+              ${ECR_REGISTRY}/${{ env.PROJECT_NAME }}-backend-despachos:latest
+
+      - name: Desplegar frontend en EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_FRONTEND_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:latest
+            docker stop innovatech-frontend 2>/dev/null || true
+            docker rm innovatech-frontend 2>/dev/null || true
+            docker run -d --name innovatech-frontend --restart unless-stopped \
+              -e BACKEND_HOST=${{ secrets.EC2_BACKEND_PRIVATE_IP }} \
+              -p 80:8080 \
+              ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:latest
