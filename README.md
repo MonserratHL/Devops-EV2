@@ -15,11 +15,45 @@ Repositorio: [MonserratHL/Devops-EV2](https://github.com/MonserratHL/Devops-EV2)
 
 ## Diagrama de arquitectura
 
-Diagrama con iconografía al estilo **AWS Architecture Icons** (EC2, VPC, NAT, ECR, usuarios):
+```mermaid
+flowchart TB
+    U["Usuarios<br/>HTTP :80"] --> F
 
-![Diagrama de arquitectura AWS Innovatech Chile](docs/arquitectura-aws.png)
+    subgraph AWS["AWS Cloud - us-east-1"]
+        subgraph VPC["Amazon VPC 10.0.0.0/16"]
+            subgraph PUB["Subred publica 10.0.1.0/24"]
+                F["EC2 Frontend<br/>nginx + React :80<br/>Bastion SSH"]
+                NAT["NAT Gateway"]
+            end
+            subgraph PRIV["Subred privada 10.0.2.0/24"]
+                B["EC2 Backend<br/>Spring Boot :8080 / :8081"]
+                D["EC2 Database<br/>MySQL 8 :3306"]
+            end
+            IGW["Internet Gateway"]
+        end
+        ECR["Amazon ECR<br/>3 repositorios Docker"]
+    end
 
-> **Editar el diagrama:** abre [`docs/arquitectura-aws.drawio`](docs/arquitectura-aws.drawio) en [diagrams.net](https://app.diagrams.net) (libreria **AWS19**) y exporta PNG a `docs/arquitectura-aws.png`.
+    GHA["GitHub Actions<br/>rama deploy"] -->|SSH ProxyJump| F
+    GHA -->|push imagenes| ECR
+    ECR -->|docker pull via NAT| B
+    ECR -->|docker pull| F
+    F -->|proxy API| B
+    B -->|MySQL| D
+    U --> F
+    F --- IGW
+    NAT --- B
+```
+
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/MonserratHL/Devops-EV2/main/docs/arquitectura-aws.png"
+    alt="Diagrama de arquitectura AWS Innovatech Chile"
+    width="900"
+  />
+</p>
+
+> **Editar el diagrama visual:** [`docs/arquitectura-aws.drawio`](docs/arquitectura-aws.drawio) en [diagrams.net](https://app.diagrams.net) (libreria AWS19). Exporta PNG y reemplaza `docs/arquitectura-aws.png`.
 
 ### Flujo de comunicación en producción
 
@@ -40,8 +74,7 @@ Diagrama con iconografía al estilo **AWS Architecture Icons** (EC2, VPC, NAT, E
 Devops-EV2/
 ├── README.md                          # Documentacion principal (esta pagina)
 ├── docs/
-│   ├── arquitectura-aws.png           # Diagrama (visible en GitHub)
-│   ├── arquitectura-aws.svg           # Version vectorial
+│   ├── arquitectura-aws.png           # Diagrama exportado (imagen)
 │   └── arquitectura-aws.drawio        # Fuente editable draw.io
 ├── .github/workflows/
 │   ├── ci.yml                         # Integracion continua
@@ -285,7 +318,7 @@ Tras un **reset del Learner Lab**, actualiza las IPs con `terraform output` y vu
 | Página carga pero tablas vacías | APIs con 502 | Revisar logs en EC2 backend; verificar secrets `EC2_DB_PRIVATE_IP` y `DB_PASSWORD` |
 | `Permission denied (publickey)` en deploy | PEM o IP incorrectos | Actualizar secrets tras `terraform apply` |
 | CI falla con `Public Key Retrieval` | MySQL 8 + driver JDBC | Corregido con `allowPublicKeyRetrieval=true` en `application.properties` |
-| Diagrama no se ve en GitHub | SVG bloqueado por sanitizador | Usar `docs/arquitectura-aws.png` en el README |
+| Diagrama no se ve en GitHub | SVG con caracteres invalidos | Usar diagrama Mermaid + PNG en README (sin archivos .svg) |
 | `terraform destroy` lento | NAT Gateway + EC2 | Normal en Learner Lab; esperar varios minutos |
 
 ### Conectar a MySQL en la instancia database
