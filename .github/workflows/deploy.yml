@@ -1,4 +1,4 @@
-name: Despliegue continuo
+name: Despliegue continuo ECS
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 env:
   AWS_REGION: us-east-1
   PROJECT_NAME: innovatech
+  ECS_CLUSTER: innovatech-cluster
 
 jobs:
   build-push-deploy:
@@ -16,6 +17,9 @@ jobs:
     steps:
       - name: Checkout del codigo
         uses: actions/checkout@v4
+
+      - name: Inicio del pipeline
+        run: echo "PIPELINE_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -28,11 +32,6 @@ jobs:
       - name: Login en Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Obtener password de ECR para EC2
-        id: ecr-password
-        run: |
-          echo "password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" >> "$GITHUB_OUTPUT"
 
       - name: Build y push backend ventas
         env:
@@ -70,75 +69,56 @@ jobs:
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 
-      - name: Configurar agente SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-
-      - name: Verificar SSH al frontend
-        env:
-          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
+      - name: Redesplegar servicios ECS
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
-            ec2-user@"${FRONTEND_HOST}" "echo SSH al frontend OK"
+          SERVICES=(
+            "${{ env.PROJECT_NAME }}-frontend"
+            "${{ env.PROJECT_NAME }}-backend-ventas"
+            "${{ env.PROJECT_NAME }}-backend-despachos"
+          )
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "Forzando nuevo despliegue: ${SERVICE}"
+            aws ecs update-service \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --service "${SERVICE}" \
+              --force-new-deployment \
+              --output text > /dev/null
+          done
+          echo "Esperando estabilidad de servicios..."
+          aws ecs wait services-stable \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${SERVICES[@]}"
 
-      - name: Desplegar backend en EC2 (subred privada via ProxyJump)
+      - name: Verificar aplicacion via ALB
         env:
-          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
-          BACKEND_IP: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
-          PROJECT_NAME: ${{ env.PROJECT_NAME }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_HOST: ${{ secrets.EC2_DB_PRIVATE_IP }}
-        run: |
-          set -e
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
-            -J ec2-user@"${FRONTEND_HOST}" \
-            ec2-user@"${BACKEND_IP}" bash -s <<REMOTE
-          set -e
-          echo "${ECR_PASSWORD}" | sudo docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-          sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
-          sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
-          sudo docker stop innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
-          sudo docker rm innovatech-backend-ventas innovatech-backend-despachos 2>/dev/null || true
-          sudo docker run -d --name innovatech-backend-ventas --restart unless-stopped \
-            -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
-            -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
-            -e DB_PASSWORD="${DB_PASSWORD}" \
-            --network host \
-            "${ECR_REGISTRY}/${PROJECT_NAME}-backend-ventas:latest"
-          sudo docker run -d --name innovatech-backend-despachos --restart unless-stopped \
-            -e DB_HOST="${DB_HOST}" -e DB_PORT=3306 -e DB_ENDPOINT="${DB_HOST}" \
-            -e DB_NAME="${DB_NAME}" -e DB_USERNAME=root \
-            -e DB_PASSWORD="${DB_PASSWORD}" \
-            --network host \
-            "${ECR_REGISTRY}/${PROJECT_NAME}-backend-despachos:latest"
-          echo "Esperando APIs Spring Boot..."
-          sleep 60
-          curl -sf http://127.0.0.1:8080/api/v1/ventas > /dev/null && echo "API ventas OK" || sudo docker logs innovatech-backend-ventas --tail 20
-          curl -sf http://127.0.0.1:8081/api/v1/despachos > /dev/null && echo "API despachos OK" || sudo docker logs innovatech-backend-despachos --tail 20
-          REMOTE
-
-      - name: Desplegar frontend en EC2
-        env:
-          FRONTEND_HOST: ${{ secrets.EC2_FRONTEND_HOST }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
-          PROJECT_NAME: ${{ env.PROJECT_NAME }}
-          BACKEND_HOST: ${{ secrets.EC2_BACKEND_PRIVATE_IP }}
+          ALB_DNS: ${{ secrets.ECS_ALB_DNS_NAME }}
         run: |
           set -e
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
-            ec2-user@"${FRONTEND_HOST}" bash -s <<REMOTE
-          set -e
-          echo "${ECR_PASSWORD}" | sudo docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-          sudo docker pull "${ECR_REGISTRY}/${PROJECT_NAME}-frontend:latest"
-          sudo docker stop innovatech-frontend 2>/dev/null || true
-          sudo docker rm innovatech-frontend 2>/dev/null || true
-          sudo docker run -d --name innovatech-frontend --restart unless-stopped \
-            -e BACKEND_HOST="${BACKEND_HOST}" \
-            -p 80:8080 \
-            "${ECR_REGISTRY}/${PROJECT_NAME}-frontend:latest"
-          REMOTE
+          echo "Esperando APIs Spring Boot en ALB..."
+          for i in $(seq 1 24); do
+            if curl -sf "http://${ALB_DNS}/api/v1/ventas" > /dev/null \
+              && curl -sf "http://${ALB_DNS}/api/v1/despachos" > /dev/null \
+              && curl -sf "http://${ALB_DNS}/" > /dev/null; then
+              echo "Aplicacion OK en intento ${i}"
+              echo "Frontend: http://${ALB_DNS}"
+              exit 0
+            fi
+            echo "Intento ${i}/24 - servicios aun iniciando..."
+            sleep 15
+          done
+          echo "=== Estado servicios ECS ==="
+          aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.PROJECT_NAME }}-frontend" \
+                       "${{ env.PROJECT_NAME }}-backend-ventas" \
+                       "${{ env.PROJECT_NAME }}-backend-despachos" \
+            --query 'services[].{name:serviceName,running:runningCount,desired:desiredCount,status:status}' \
+            --output table
+          exit 1
+
+      - name: Resumen de metricas del pipeline
+        if: always()
+        run: |
+          echo "Commit desplegado: ${{ github.sha }}"
+          echo "Cluster ECS: ${{ env.ECS_CLUSTER }}"
+          echo "Inicio UTC: ${PIPELINE_START:-N/A}"
+          echo "Fin UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
