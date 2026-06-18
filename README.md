@@ -1,64 +1,76 @@
-# Innovatech Chile — Infraestructura AWS con Terraform y CI/CD
+# Innovatech Chile — Orquestación ECS Fargate con Terraform y CI/CD
 
 **Descripción**  
-Proyecto semestral DevOps (EP2) que despliega un sistema de gestión de **ventas** y **despachos** contenedorizado, con:
+Proyecto semestral DevOps (EP3) que despliega un sistema de gestión de **ventas** y **despachos** contenedorizado con:
 
 - **Docker** multi-stage y `docker-compose` para desarrollo local.
 - **Amazon ECR** como registro de imágenes.
-- **3 instancias EC2** en capas (frontend, backend, base de datos) dentro de una **VPC** con subred pública y privada.
-- **NAT Gateway** para salida segura de instancias privadas hacia ECR.
-- **GitHub Actions** para integración continua (CI) y despliegue continuo (CD).
+- **Amazon ECS Fargate** como orquestador de contenedores (sin servidores EC2 de aplicación).
+- **Application Load Balancer** con enrutamiento por path (`/api/v1/ventas*`, `/api/v1/despachos*`, frontend).
+- **Autoscaling** Target Tracking (CPU y memoria al 50 %).
+- **CloudWatch Logs** y Container Insights para observabilidad.
+- **GitHub Actions** para integración continua (CI) y despliegue continuo (CD) build → push → deploy.
 
 Repositorio: [MonserratHL/Devops-EV2](https://github.com/MonserratHL/Devops-EV2)
 
 ---
 
-## Diagrama de arquitectura
+## Diagrama de arquitectura (EP3 — ECS Fargate)
 
 ```mermaid
 flowchart TB
-    U["Usuarios<br/>HTTP :80"] --> F
+    U["Usuarios<br/>HTTP :80"] --> ALB
 
     subgraph AWS["AWS Cloud - us-east-1"]
-        subgraph VPC["Amazon VPC 10.0.0.0/16"]
-            subgraph PUB["Subred publica 10.0.1.0/24"]
-                F["EC2 Frontend<br/>nginx + React :80<br/>Bastion SSH"]
+        subgraph VPC["Amazon VPC 10.1.0.0/16"]
+            subgraph PUB["Subredes publicas (2 AZ)"]
+                ALB["Application Load Balancer"]
                 NAT["NAT Gateway"]
             end
-            subgraph PRIV["Subred privada 10.0.2.0/24"]
-                B["EC2 Backend<br/>Spring Boot :8080 / :8081"]
-                D["EC2 Database<br/>MySQL 8 :3306"]
+            subgraph PRIV["Subredes privadas (2 AZ)"]
+                FE["ECS Fargate<br/>Frontend nginx + React"]
+                BV["ECS Fargate<br/>Backend Ventas :8080"]
+                BD["ECS Fargate<br/>Backend Despachos :8081"]
+                DB["ECS Fargate<br/>MySQL 8 :3306"]
             end
+            CM["Cloud Map<br/>mysql.innovatech.local"]
             IGW["Internet Gateway"]
         end
         ECR["Amazon ECR<br/>3 repositorios Docker"]
+        CW["CloudWatch Logs<br/>+ Container Insights"]
     end
 
-    GHA["GitHub Actions<br/>rama deploy"] -->|SSH ProxyJump| F
-    GHA -->|push imagenes| ECR
-    ECR -->|docker pull via NAT| B
-    ECR -->|docker pull| F
-    F -->|proxy API| B
-    B -->|MySQL| D
-    U --> F
-    F --- IGW
-    NAT --- B
+    GHA["GitHub Actions<br/>rama deploy"] -->|push imagenes| ECR
+    GHA -->|force-new-deployment| FE
+    GHA -->|force-new-deployment| BV
+    GHA -->|force-new-deployment| BD
+    ECR -->|pull via NAT| FE
+    ECR -->|pull via NAT| BV
+    ECR -->|pull via NAT| BD
+    ALB -->|"/"| FE
+    ALB -->|"/api/v1/ventas*"| BV
+    ALB -->|"/api/v1/despachos*"| BD
+    BV -->|MySQL| DB
+    BD -->|MySQL| DB
+    DB --- CM
+    FE --- CW
+    BV --- CW
+    BD --- CW
+    U --> ALB
+    NAT --- PRIV
+    ALB --- IGW
 ```
 
-![Diagrama de arquitectura AWS Innovatech Chile](docs/arquitectura-aws.png)
-
-> **Editar el diagrama visual:** [`docs/arquitectura-aws.drawio`](docs/arquitectura-aws.drawio) en [diagrams.net](https://app.diagrams.net) (libreria AWS19). Exporta PNG y reemplaza `docs/arquitectura-aws.png`.
-
-### Flujo de comunicación en producción
+### Flujo de comunicación en producción (ECS)
 
 | Origen | Destino | Puerto | Protocolo |
 |--------|---------|--------|-------------|
-| Internet | EC2 Frontend | 80 | HTTP (único acceso público) |
-| Frontend (nginx) | EC2 Backend | 8080 / 8081 | Proxy API REST |
-| Backend (Spring Boot) | EC2 Database | 3306 | MySQL |
-| EC2 privadas | Amazon ECR | 443 | Pull de imágenes (vía NAT) |
-| GitHub Actions | EC2 Frontend | 22 | SSH (bastion) |
-| GitHub Actions | EC2 Backend | 22 | SSH ProxyJump vía frontend |
+| Internet | ALB | 80 | HTTP (único acceso público) |
+| ALB | ECS Frontend | 8080 | HTTP (ruta `/`) |
+| ALB | ECS Backend Ventas | 8080 | HTTP (ruta `/api/v1/ventas*`) |
+| ALB | ECS Backend Despachos | 8081 | HTTP (ruta `/api/v1/despachos*`) |
+| Backends Spring Boot | ECS MySQL | 3306 | MySQL vía Cloud Map DNS |
+| Tareas ECS privadas | Amazon ECR | 443 | Pull de imágenes (vía NAT) |
 
 ---
 
@@ -68,17 +80,20 @@ flowchart TB
 Devops-EV2/
 ├── README.md                          # Documentacion principal (esta pagina)
 ├── docs/
-│   ├── arquitectura-aws.png           # Diagrama exportado (imagen)
-│   └── arquitectura-aws.drawio        # Fuente editable draw.io
+│   ├── arquitectura-aws.png           # Diagrama EP2 (referencia historica)
+│   ├── arquitectura-aws.drawio
+│   └── scripts/
+│       └── load-test-alb.sh           # Simulacion de carga para autoscaling
 ├── .github/workflows/
 │   ├── ci.yml                         # Integracion continua
-│   └── deploy.yml                     # Despliegue continuo
+│   └── deploy.yml                     # Despliegue continuo ECS
 └── proyecto semestral/
     ├── docker-compose.yml
     ├── .env.example
     ├── infra/
     │   ├── etapa_1/                   # Terraform: ECR
-    │   └── etapa_2/                   # Terraform: VPC + EC2
+    │   ├── etapa_2/                   # Terraform: VPC + EC2 (EP2, legacy)
+    │   └── etapa_3/                   # Terraform: ECS Fargate + ALB (EP3)
     ├── back-Ventas_SpringBoot/
     ├── back-Despachos_SpringBoot/
     └── front_despacho/
@@ -93,8 +108,8 @@ Devops-EV2/
 | [Docker](https://www.docker.com/) | 24+ |
 | [Docker Compose](https://docs.docker.com/compose/) | v2 |
 | [Terraform CLI](https://www.terraform.io/downloads) | >= 1.0 |
-| [AWS CLI](https://aws.amazon.com/cli/) | v2 (opcional) |
-| Cuenta **AWS** | AWS Academy Learner Lab o cuenta con permisos EC2/VPC/ECR |
+| [AWS CLI](https://aws.amazon.com/cli/) | v2 |
+| Cuenta **AWS** | AWS Academy Learner Lab o cuenta con permisos ECS/VPC/ECR/ALB |
 | [GitHub](https://github.com/) | Repositorio con Actions habilitado |
 
 **Provider Terraform:** `hashicorp/aws` ~> 5.0  
@@ -114,8 +129,6 @@ docker compose up -d --build
 
 Acceso: **http://localhost**
 
-Los datos de ventas se cargan automáticamente si la base está vacía. Pulsa **Consultar** en las tarjetas para ver las APIs en acción.
-
 ### 2. Infraestructura AWS (Terraform)
 
 **Etapa 1 — Repositorios ECR**
@@ -126,14 +139,15 @@ terraform init
 terraform apply
 ```
 
-**Etapa 2 — VPC, subredes, NAT, 3 EC2 y Security Groups**
+**Etapa 3 — ECS Fargate, ALB, autoscaling y CloudWatch**
 
-> Ejecuta siempre **etapa_1** antes que **etapa_2**. La etapa 2 reutiliza los repositorios ECR mediante *data sources*.
+> Ejecuta **etapa_1** antes que **etapa_3**. La etapa 3 reutiliza ECR mediante *data sources*.  
+> Si tienes recursos de **etapa_2** (EC2) activos, destrúyelos primero para evitar costos duplicados.
 
 ```bash
-cd "../etapa_2"
+cd "../etapa_3"
 cp terraform.tfvars.example terraform.tfvars
-# Edita key_pair_name y db_password
+# Edita db_password
 terraform init
 terraform plan
 terraform apply
@@ -142,14 +156,15 @@ terraform apply
 **Outputs útiles:**
 
 ```bash
-terraform output frontend_public_ip
-terraform output backend_private_ip
-terraform output database_private_ip
+terraform output application_url
+terraform output ecs_cluster_name
+terraform output cloudwatch_log_groups
 ```
 
 ### 3. Despliegue con GitHub Actions
 
-Configura los [secrets](#secrets-de-github) y haz push a la rama **`deploy`**:
+1. Configura los [secrets](#secrets-de-github).
+2. Haz push inicial de imágenes (primer deploy) o merge a **`deploy`**:
 
 ```bash
 git checkout deploy
@@ -157,7 +172,7 @@ git merge main
 git push origin deploy
 ```
 
-La aplicación quedará disponible en: `http://<frontend_public_ip>`
+La aplicación quedará disponible en: `http://<alb_dns_name>` (ver `terraform output application_url`)
 
 ---
 
@@ -171,23 +186,26 @@ La aplicación quedará disponible en: `http://<frontend_public_ip>`
 | `aws_ecr_repository` | `innovatech-backend-despachos` |
 | `aws_ecr_repository` | `innovatech-frontend` |
 
-Escaneo de vulnerabilidades en push habilitado.
-
-### Etapa 2 — `infra/etapa_2`
+### Etapa 3 — `infra/etapa_3` (EP3)
 
 | Categoría | Recursos |
 |-----------|----------|
-| **Red** | VPC `10.0.0.0/16`, subred pública `10.0.1.0/24`, subred privada `10.0.2.0/24` |
+| **Red** | VPC `10.1.0.0/16`, 2 subredes públicas + 2 privadas (multi-AZ) |
 | **Conectividad** | Internet Gateway, NAT Gateway, tablas de ruteo |
-| **Cómputo** | 3 × `aws_instance` (Amazon Linux 2023, Docker en user_data) |
-| **Seguridad** | 3 Security Groups con reglas mínimas entre capas |
-| **Datos** | MySQL 8 en contenedor Docker con volumen persistente |
+| **Orquestación** | ECS Cluster Fargate + Capacity Providers |
+| **Balanceo** | Application Load Balancer con reglas por path |
+| **Servicios ECS** | frontend, backend-ventas, backend-despachos, mysql |
+| **IAM** | Execution Role + Task Role |
+| **Observabilidad** | CloudWatch Log Groups, Container Insights |
+| **Autoscaling** | Target Tracking CPU/Memory al 50 % (min 1, max 3 tareas) |
+| **DNS interno** | Cloud Map (`mysql.innovatech.local`) |
 
-| Instancia | Rol | Subred | IP pública |
-|-----------|-----|--------|------------|
-| `innovatech-frontend` | nginx + React | Pública | Sí (:80) |
-| `innovatech-backend` | Spring Boot ×2 | Privada | No |
-| `innovatech-database` | MySQL 8 | Privada | No |
+| Servicio ECS | Imagen | Puerto | Subred |
+|--------------|--------|--------|--------|
+| `innovatech-frontend` | ECR frontend | 8080 | Privada (vía ALB) |
+| `innovatech-backend-ventas` | ECR backend-ventas | 8080 | Privada (vía ALB) |
+| `innovatech-backend-despachos` | ECR backend-despachos | 8081 | Privada (vía ALB) |
+| `innovatech-mysql` | mysql:8 | 3306 | Privada (Cloud Map) |
 
 ---
 
@@ -198,12 +216,12 @@ Escaneo de vulnerabilidades en push habilitado.
 | `feature/*` / `fix/*` | Desarrollo de funcionalidades | CI al hacer push |
 | `develop` | Integración | CI |
 | `main` | Código estable | CI |
-| `deploy` | Publicación en AWS | **CD** (build → ECR → EC2) |
+| `deploy` | Publicación en AWS ECS | **CD** (build → ECR → ECS) |
 
 **Flujo recomendado:**
 
 ```
-feature/* → develop → main → deploy
+feature/ep3-* → develop → main → deploy
 ```
 
 ---
@@ -222,16 +240,16 @@ Se ejecuta en **push** a `main`, `develop`, `feature/*`, `fix/*` y en **pull req
 
 **No despliega en AWS.** Solo valida que el stack Docker funciona.
 
-### Despliegue continuo — `deploy.yml`
+### Despliegue continuo — `deploy.yml` (EP3)
 
 Se ejecuta **solo** en push a la rama **`deploy`**.
 
 1. Build multi-plataforma `linux/amd64` de las 3 imágenes
 2. Push a **Amazon ECR** (tag `latest` + SHA del commit)
-3. SSH al frontend con `webfactory/ssh-agent`
-4. **ProxyJump** al backend privado → `docker pull` + `docker run`
-5. Despliegue del frontend con variable `BACKEND_HOST`
-6. Verificación de APIs
+3. `aws ecs update-service --force-new-deployment` en frontend y backends
+4. Espera estabilidad con `aws ecs wait services-stable`
+5. Verificación HTTP vía ALB (`/`, `/api/v1/ventas`, `/api/v1/despachos`)
+6. Resumen de tiempos del pipeline en logs
 
 ---
 
@@ -244,18 +262,69 @@ Se ejecuta **solo** en push a la rama **`deploy`**.
 | `AWS_ACCESS_KEY_ID` | Credencial AWS |
 | `AWS_SECRET_ACCESS_KEY` | Credencial AWS |
 | `AWS_SESSION_TOKEN` | Token de sesión (requerido en AWS Academy) |
-| `EC2_FRONTEND_HOST` | IP **pública** del frontend (`terraform output frontend_public_ip`) |
-| `EC2_BACKEND_PRIVATE_IP` | IP privada del backend |
-| `EC2_DB_PRIVATE_IP` | IP privada de la instancia database |
-| `EC2_SSH_PRIVATE_KEY` | Contenido completo del archivo `.pem` (key pair usado en Terraform) |
-| `DB_NAME` | Nombre de la base (ej. `innovatech_db`) |
-| `DB_PASSWORD` | Misma contraseña que `db_password` en `terraform apply` |
+| `ECS_ALB_DNS_NAME` | DNS del ALB (`terraform output alb_dns_name`) |
 
-Tras un **reset del Learner Lab**, actualiza las IPs con `terraform output` y vuelve a pegar el `.pem` si el key pair cambió.
+> **Nota:** Los secrets de EC2 (`EC2_SSH_PRIVATE_KEY`, `EC2_FRONTEND_HOST`, etc.) ya no son necesarios para EP3. Se conservan solo si mantienes la infraestructura legacy de etapa_2.
+
+Tras un **reset del Learner Lab**, vuelve a ejecutar `terraform apply` en etapa_3 y actualiza `ECS_ALB_DNS_NAME`.
 
 ---
 
-## Arquitectura de contenedores (local y EC2)
+## Autoscaling y simulación de carga
+
+El autoscaling usa **Target Tracking** con umbral de **50 % CPU y 50 % memoria** (configurable en `terraform.tfvars` → `autoscaling_target_cpu`).
+
+Para evidenciar escalado durante la presentación:
+
+```bash
+chmod +x docs/scripts/load-test-alb.sh
+./docs/scripts/load-test-alb.sh <dns-del-alb> 120
+```
+
+Monitorea en AWS Console:
+- **ECS** → Cluster → Services → pestaña *Auto Scaling*
+- **CloudWatch** → Container Insights → métricas CPU/Memory
+- **CloudWatch Logs** → `/ecs/innovatech/*`
+
+---
+
+## Logs y métricas (EP3)
+
+| Grupo CloudWatch | Servicio |
+|------------------|----------|
+| `/ecs/innovatech/frontend` | nginx + React |
+| `/ecs/innovatech/backend-ventas` | API Spring Boot ventas |
+| `/ecs/innovatech/backend-despachos` | API Spring Boot despachos |
+| `/ecs/innovatech/mysql` | MySQL 8 |
+
+Consultar logs desde CLI:
+
+```bash
+aws logs tail /ecs/innovatech/backend-ventas --follow
+```
+
+Métricas del pipeline: revisar el step *Resumen de metricas del pipeline* en [GitHub Actions](https://github.com/MonserratHL/Devops-EV2/actions).
+
+---
+
+## Requisitos EP3 cubiertos
+
+- [x] Clúster **ECS Fargate** con Capacity Providers  
+- [x] VPC, subredes multi-AZ y Security Groups  
+- [x] Roles IAM (execution role + task role)  
+- [x] Despliegue Frontend + Backend desde **Amazon ECR**  
+- [x] Variables de entorno en Task Definitions  
+- [x] **Application Load Balancer** con acceso público al frontend  
+- [x] Comunicación Front → Back vía ALB (mismo origen HTTP)  
+- [x] **Autoscaling** Target Tracking CPU/Memory  
+- [x] **CloudWatch Logs** por servicio  
+- [x] Pipeline CI/CD **build → push → deploy** automatizado  
+- [x] Secrets gestionados en GitHub (sin credenciales en código)  
+- [x] Script de simulación de carga para evidencia de autoscaling  
+
+---
+
+## Arquitectura de contenedores (local)
 
 | Servicio | Imagen | Puerto | Usuario |
 |----------|--------|--------|---------|
@@ -264,98 +333,39 @@ Tras un **reset del Learner Lab**, actualiza las IPs con `terraform output` y vu
 | Backend despachos | `innovatech-backend-despachos` | 8081 | no root |
 | MySQL | `mysql:8` | 3306 | — |
 
-**Red Docker local:** `innovatech-net` (bridge)  
-**Volumen:** `innovatech-mysql-data`
-
----
-
-## Requisitos EP2 cubiertos
-
-- [x] Dockerfiles **multi-stage** con usuario no root  
-- [x] `docker-compose.yml` con redes, volúmenes y healthchecks  
-- [x] Publicación de imágenes en **Amazon ECR**  
-- [x] Pipeline **CI/CD** en GitHub Actions  
-- [x] Infraestructura **Terraform** (ECR + VPC + EC2)  
-- [x] Solo el **frontend** accesible desde Internet  
-- [x] **3 capas** en subredes (presentación, lógica, datos)  
-
----
-
-## Mejores prácticas incluidas
-
-- **Separación de responsabilidades:** Terraform en dos etapas (ECR vs. cómputo/red).
-- **Principio de mínimo privilegio:** Security Groups por capa; backend y BD sin IP pública.
-- **Bastion SSH:** el frontend permite despliegue CI/CD hacia instancias privadas.
-- **Variables y outputs:** configuración centralizada en `variables.tf` / `outputs.tf`.
-- **Imágenes inmutables:** tags en ECR por commit SHA y `latest`.
-- **Healthchecks** en MySQL para orden de arranque en Compose.
-- **Trazabilidad DevOps:** historial de fallos y correcciones documentado en Actions.
-
----
-
-## Cómo extender el proyecto
-
-- Añadir **Application Load Balancer** delante del frontend con HTTPS (ACM).
-- Migrar MySQL a **Amazon RDS** en subred privada.
-- Usar **AWS Secrets Manager** para credenciales en lugar de secrets planos.
-- Implementar **Terraform remote state** (S3 + DynamoDB lock).
-- Añadir `workflow_dispatch` para despliegues manuales desde GitHub.
-- Configurar **CloudWatch** logs y alarmas por instancia.
-- Escalar backends con **ECS Fargate** manteniendo la misma VPC.
-
 ---
 
 ## Solución de problemas
 
 | Síntoma | Causa probable | Acción |
 |---------|----------------|--------|
-| Página carga pero tablas vacías | APIs con 502 | Revisar logs en EC2 backend; verificar secrets `EC2_DB_PRIVATE_IP` y `DB_PASSWORD` |
-| `Permission denied (publickey)` en deploy | PEM o IP incorrectos | Actualizar secrets tras `terraform apply` |
-| CI falla con `Public Key Retrieval` | MySQL 8 + driver JDBC | Corregido con `allowPublicKeyRetrieval=true` en `application.properties` |
-| Diagrama no se ve en GitHub | SVG con caracteres invalidos | Usar diagrama Mermaid + PNG en README (sin archivos .svg) |
-| `terraform destroy` lento | NAT Gateway + EC2 | Normal en Learner Lab; esperar varios minutos |
-
-### Conectar a MySQL en la instancia database
-
-```bash
-ssh -i mi-key-duoc.pem -J ec2-user@<IP_PUBLICA_FRONTEND> ec2-user@<IP_PRIVADA_DATABASE>
-sudo docker exec -it mysql mysql -u root -p innovatech_db
-```
+| Servicios ECS en `PENDING` | Sin imágenes en ECR | Ejecuta deploy o push manual a ECR |
+| Target group `unhealthy` | Backend aún iniciando | Espera 2–3 min; revisa logs CloudWatch |
+| 502 en ALB | MySQL no responde | Verifica servicio `innovatech-mysql` y Cloud Map |
+| Deploy falla en verificación ALB | Secret `ECS_ALB_DNS_NAME` incorrecto | Actualiza con `terraform output alb_dns_name` |
+| Autoscaling no escala | Carga insuficiente | Usa `load-test-alb.sh` por 2+ minutos |
 
 ### Verificar APIs desde tu máquina
 
 ```bash
-curl http://<IP_PUBLICA_FRONTEND>/api/v1/ventas
-curl http://<IP_PUBLICA_FRONTEND>/api/v1/despachos
+ALB=$(cd "proyecto semestral/infra/etapa_3" && terraform output -raw alb_dns_name)
+curl "http://${ALB}/api/v1/ventas"
+curl "http://${ALB}/api/v1/despachos"
 ```
-
----
-
-## Historial del pipeline (trazabilidad)
-
-| Problema | Solución aplicada |
-|----------|-------------------|
-| Repositorios ECR duplicados | Data sources en etapa 2 |
-| Variables ECR no llegaban al EC2 | Password ECR desde Actions + `envs` |
-| `permission denied` en Docker | `sudo docker` en scripts de deploy |
-| SSH `unable to authenticate` | `ssh-agent` + ProxyJump; secrets actualizados |
-| CI 502 / timeout | Reintentos + `allowPublicKeyRetrieval` para MySQL 8 |
-
-Runs: [GitHub Actions](https://github.com/MonserratHL/Devops-EV2/actions)
 
 ---
 
 ## Equipo y contexto académico
 
-- **Asignatura:** DevOps — Evaluación Parcial 2 (EP2)  
+- **Asignatura:** DevOps — Evaluación Parcial 3 (EP3)  
 - **Institución:** Duoc UC  
-- **Proyecto:** Innovatech Chile — ventas y despachos  
+- **Proyecto:** Innovatech Chile — orquestación ECS y CI/CD  
 
 ---
 
 ## Referencias
 
-- [AWS Architecture Icons](https://aws.amazon.com/architecture/icons/)
+- [Amazon ECS on Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html)
+- [Application Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/)
 - [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
 - [GitHub Actions](https://docs.github.com/en/actions)
-- Ejemplo de estructura README IaC: [deployment_azure_netwrok_terraform](https://github.com/jorgee-lab/deployment_azure_netwrok_terraform)
