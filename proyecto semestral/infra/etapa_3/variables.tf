@@ -39,3 +39,15 @@ variable "service_max_count" {
   type        = number
   default     = 3
 }
+
+variable "ecs_execution_role_name" {
+  description = "Nombre del rol IAM de ejecucion ECS existente en VocLabs (tipicamente LabRole)"
+  type        = string
+  default     = "LabRole"
+}
+
+variable "ecs_task_role_name" {
+  description = "Nombre del rol IAM de tarea ECS existente en VocLabs (tipicamente LabRole)"
+  type        = string
+  default     = "LabRole"
+}

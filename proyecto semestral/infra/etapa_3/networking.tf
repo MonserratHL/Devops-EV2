@@ -131,15 +131,7 @@ resource "aws_security_group" "ecs_tasks" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "Frontend desde ALB"
-    from_port       = 8080
-    to_port         = 8080
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  ingress {
-    description     = "API ventas desde ALB"
+    description     = "Frontend y API ventas desde ALB"
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"

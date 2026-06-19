@@ -1,38 +1,10 @@
-resource "aws_iam_role" "ecs_execution" {
-  name = "${var.project_name}-ecs-execution-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-    }]
-  })
-
-  tags = {
-    Name = "${var.project_name}-ecs-execution-role"
-  }
+# AWS Academy VocLabs no permite iam:CreateRole.
+# Usar el rol preexistente del learner lab (por defecto "LabRole").
+# Si tu lab usa otro nombre, ajusta las variables ecs_execution_role_name / ecs_task_role_name.
+data "aws_iam_role" "ecs_execution" {
+  name = var.ecs_execution_role_name
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_execution" {
-  role       = aws_iam_role.ecs_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-resource "aws_iam_role" "ecs_task" {
-  name = "${var.project_name}-ecs-task-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-    }]
-  })
-
-  tags = {
-    Name = "${var.project_name}-ecs-task-role"
-  }
+data "aws_iam_role" "ecs_task" {
+  name = var.ecs_task_role_name
 }

@@ -58,3 +58,8 @@ output "ecr_frontend_url" {
 output "vpc_id" {
   value = aws_vpc.main.id
 }
+
+output "mysql_nlb_dns_name" {
+  description = "DNS del NLB interno para conexion MySQL (DB_HOST de backends)"
+  value       = aws_lb.mysql_internal.dns_name
+}

@@ -34,35 +34,6 @@ resource "aws_cloudwatch_log_group" "frontend" {
   }
 }
 
-resource "aws_service_discovery_private_dns_namespace" "main" {
-  name        = "${var.project_name}.local"
-  description = "DNS privado para servicios ECS"
-  vpc         = aws_vpc.main.id
-
-  tags = {
-    Name = "${var.project_name}-cloudmap"
-  }
-}
-
-resource "aws_service_discovery_service" "mysql" {
-  name = "mysql"
-
-  dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.main.id
-
-    dns_records {
-      ttl  = 10
-      type = "A"
-    }
-
-    routing_policy = "MULTIVALUE"
-  }
-
-  health_check_custom_config {
-    failure_threshold = 1
-  }
-}
-
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster"
 
@@ -94,8 +65,8 @@ resource "aws_ecs_task_definition" "mysql" {
   network_mode             = "awsvpc"
   cpu                      = "512"
   memory                   = "1024"
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  execution_role_arn       = data.aws_iam_role.ecs_execution.arn
+  task_role_arn            = data.aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([{
     name      = "mysql"
@@ -134,8 +105,8 @@ resource "aws_ecs_task_definition" "backend_ventas" {
   network_mode             = "awsvpc"
   cpu                      = "512"
   memory                   = "1024"
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  execution_role_arn       = data.aws_iam_role.ecs_execution.arn
+  task_role_arn            = data.aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([{
     name      = "backend-ventas"
@@ -146,9 +117,9 @@ resource "aws_ecs_task_definition" "backend_ventas" {
       protocol      = "tcp"
     }]
     environment = [
-      { name = "DB_HOST", value = "mysql.${var.project_name}.local" },
+      { name = "DB_HOST", value = aws_lb.mysql_internal.dns_name },
       { name = "DB_PORT", value = "3306" },
-      { name = "DB_ENDPOINT", value = "mysql.${var.project_name}.local" },
+      { name = "DB_ENDPOINT", value = aws_lb.mysql_internal.dns_name },
       { name = "DB_NAME", value = var.db_name },
       { name = "DB_USERNAME", value = "root" },
       { name = "DB_PASSWORD", value = var.db_password }
@@ -170,8 +141,8 @@ resource "aws_ecs_task_definition" "backend_despachos" {
   network_mode             = "awsvpc"
   cpu                      = "512"
   memory                   = "1024"
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  execution_role_arn       = data.aws_iam_role.ecs_execution.arn
+  task_role_arn            = data.aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([{
     name      = "backend-despachos"
@@ -182,9 +153,9 @@ resource "aws_ecs_task_definition" "backend_despachos" {
       protocol      = "tcp"
     }]
     environment = [
-      { name = "DB_HOST", value = "mysql.${var.project_name}.local" },
+      { name = "DB_HOST", value = aws_lb.mysql_internal.dns_name },
       { name = "DB_PORT", value = "3306" },
-      { name = "DB_ENDPOINT", value = "mysql.${var.project_name}.local" },
+      { name = "DB_ENDPOINT", value = aws_lb.mysql_internal.dns_name },
       { name = "DB_NAME", value = var.db_name },
       { name = "DB_USERNAME", value = "root" },
       { name = "DB_PASSWORD", value = var.db_password }
@@ -206,8 +177,8 @@ resource "aws_ecs_task_definition" "frontend" {
   network_mode             = "awsvpc"
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  execution_role_arn       = data.aws_iam_role.ecs_execution.arn
+  task_role_arn            = data.aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([{
     name      = "frontend"
@@ -241,9 +212,13 @@ resource "aws_ecs_service" "mysql" {
     assign_public_ip = false
   }
 
-  service_registries {
-    registry_arn = aws_service_discovery_service.mysql.arn
+  load_balancer {
+    target_group_arn = aws_lb_target_group.mysql.arn
+    container_name   = "mysql"
+    container_port   = 3306
   }
+
+  depends_on = [aws_lb_listener.mysql]
 
   tags = {
     Name = "${var.project_name}-mysql-service"

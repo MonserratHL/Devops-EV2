@@ -103,6 +103,48 @@ resource "aws_lb_listener_rule" "ventas" {
   }
 }
 
+# NLB interno para MySQL: reemplaza Cloud Map (no permitido en VocLabs).
+# Los backends usan este DNS estable como DB_HOST.
+resource "aws_lb" "mysql_internal" {
+  name               = "${var.project_name}-mysql-nlb"
+  internal           = true
+  load_balancer_type = "network"
+  subnets            = aws_subnet.private[*].id
+
+  tags = {
+    Name = "${var.project_name}-mysql-nlb"
+  }
+}
+
+resource "aws_lb_target_group" "mysql" {
+  name        = "${var.project_name}-tg-mysql"
+  port        = 3306
+  protocol    = "TCP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    enabled  = true
+    protocol = "TCP"
+    port     = 3306
+  }
+
+  tags = {
+    Name = "${var.project_name}-tg-mysql"
+  }
+}
+
+resource "aws_lb_listener" "mysql" {
+  load_balancer_arn = aws_lb.mysql_internal.arn
+  port              = 3306
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.mysql.arn
+  }
+}
+
 resource "aws_lb_listener_rule" "despachos" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 101
