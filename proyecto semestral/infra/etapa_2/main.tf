@@ -264,7 +264,7 @@ resource "aws_instance" "database" {
   key_name               = var.key_pair_name
 
   root_block_device {
-    volume_size = 20
+    volume_size = 30
     volume_type = "gp3"
   }
 
@@ -343,7 +343,7 @@ resource "aws_instance" "frontend" {
   key_name               = var.key_pair_name
 
   root_block_device {
-    volume_size = 20
+    volume_size = 30
     volume_type = "gp3"
   }
 
