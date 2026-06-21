@@ -7,6 +7,7 @@ Proyecto semestral DevOps (EP3) que despliega un sistema de gestión de **ventas
 - **Amazon ECR** como registro de imágenes.
 - **Amazon ECS Fargate** como orquestador de contenedores (sin servidores EC2 de aplicación).
 - **Application Load Balancer** con enrutamiento por path (`/api/v1/ventas*`, `/api/v1/despachos*`, frontend).
+- **Network Load Balancer** interno para MySQL (DNS estable hacia la base de datos).
 - **Autoscaling** Target Tracking (CPU y memoria al 50 %).
 - **CloudWatch Logs** y Container Insights para observabilidad.
 - **GitHub Actions** para integración continua (CI) y despliegue continuo (CD) build → push → deploy.
@@ -37,7 +38,7 @@ flowchart TB
                 BD["ECS Fargate<br/>Backend Despachos :8081"]
                 DB["ECS Fargate<br/>MySQL 8 :3306"]
             end
-            CM["Cloud Map<br/>mysql.innovatech.local"]
+            NLB["NLB interno<br/>MySQL :3306"]
             IGW["Internet Gateway"]
         end
         ECR["Amazon ECR<br/>3 repositorios Docker"]
@@ -54,9 +55,9 @@ flowchart TB
     ALB -->|"/"| FE
     ALB -->|"/api/v1/ventas*"| BV
     ALB -->|"/api/v1/despachos*"| BD
-    BV -->|MySQL| DB
-    BD -->|MySQL| DB
-    DB --- CM
+    BV -->|TCP 3306| NLB
+    BD -->|TCP 3306| NLB
+    NLB --> DB
     FE --- CW
     BV --- CW
     BD --- CW
@@ -73,8 +74,20 @@ flowchart TB
 | ALB | ECS Frontend | 8080 | HTTP (ruta `/`) |
 | ALB | ECS Backend Ventas | 8080 | HTTP (ruta `/api/v1/ventas*`) |
 | ALB | ECS Backend Despachos | 8081 | HTTP (ruta `/api/v1/despachos*`) |
-| Backends Spring Boot | ECS MySQL | 3306 | MySQL vía Cloud Map DNS |
+| Backends Spring Boot | NLB interno MySQL | 3306 | TCP (`DB_HOST` = DNS del NLB) |
+| NLB interno | ECS MySQL | 3306 | TCP (target group) |
 | Tareas ECS privadas | Amazon ECR | 443 | Pull de imágenes (vía NAT) |
+
+> **MySQL en AWS:** los backends usan `DB_HOST` apuntando al DNS del **NLB interno** (`innovatech-mysql-nlb`), no Cloud Map — AWS Academy VocLabs no permite crear namespaces de Service Discovery. El NLB ofrece un endpoint TCP estable con health checks hacia la tarea MySQL.
+
+### Local vs producción (nginx y enrutamiento)
+
+| Aspecto | Local (`docker compose`) | Producción (ECS) |
+|---------|--------------------------|------------------|
+| Entrada HTTP | `localhost:80` | ALB público `:80` |
+| APIs `/api/v1/*` | nginx del frontend hace proxy a los backends | ALB enruta por path directo a cada backend |
+| Config nginx | `NGINX_COMPOSE_MODE=1` → `nginx.conf` con proxy | `nginx.alb.conf` — solo archivos estáticos React |
+| MySQL | Servicio Docker `mysql:3306` | ECS + NLB interno TCP `:3306` |
 
 ---
 
@@ -138,6 +151,8 @@ Acceso: **http://localhost**
 
 ### 2. Infraestructura AWS (Terraform)
 
+> **EP3 solo requiere etapa_1 y etapa_3.** La etapa_2 (EC2) es legacy de EP2 y no es necesaria para ECS Fargate.
+
 **Etapa 1 — Repositorios ECR**
 
 ```bash
@@ -146,7 +161,7 @@ terraform init
 terraform apply
 ```
 
-**Etapa 3 — ECS Fargate, ALB, autoscaling y CloudWatch**
+**Etapa 3 — ECS Fargate, ALB, NLB MySQL, autoscaling y CloudWatch**
 
 > Ejecuta **etapa_1** antes que **etapa_3**. La etapa 3 reutiliza ECR mediante *data sources*.  
 > Si tienes recursos de **etapa_2** (EC2) activos, destrúyelos primero para evitar costos duplicados.
@@ -164,6 +179,8 @@ terraform apply
 
 ```bash
 terraform output application_url
+terraform output alb_dns_name
+terraform output mysql_nlb_dns_name
 terraform output ecs_cluster_name
 terraform output cloudwatch_log_groups
 ```
@@ -200,19 +217,19 @@ La aplicación quedará disponible en: `http://<alb_dns_name>` (ver `terraform o
 | **Red** | VPC `10.1.0.0/16`, 2 subredes públicas + 2 privadas (multi-AZ) |
 | **Conectividad** | Internet Gateway, NAT Gateway, tablas de ruteo |
 | **Orquestación** | ECS Cluster Fargate + Capacity Providers |
-| **Balanceo** | Application Load Balancer con reglas por path |
+| **Balanceo** | ALB público (HTTP) + NLB interno (MySQL TCP :3306) |
 | **Servicios ECS** | frontend, backend-ventas, backend-despachos, mysql |
-| **IAM** | Execution Role + Task Role |
+| **IAM** | `LabRole` (data source; restricción AWS Academy VocLabs) |
 | **Observabilidad** | CloudWatch Log Groups, Container Insights |
 | **Autoscaling** | Target Tracking CPU/Memory al 50 % (min 1, max 3 tareas) |
-| **DNS interno** | Cloud Map (`mysql.innovatech.local`) |
+| **MySQL** | NLB interno con DNS estable (`terraform output mysql_nlb_dns_name`) |
 
 | Servicio ECS | Imagen | Puerto | Subred |
 |--------------|--------|--------|--------|
 | `innovatech-frontend` | ECR frontend | 8080 | Privada (vía ALB) |
 | `innovatech-backend-ventas` | ECR backend-ventas | 8080 | Privada (vía ALB) |
 | `innovatech-backend-despachos` | ECR backend-despachos | 8081 | Privada (vía ALB) |
-| `innovatech-mysql` | mysql:8 | 3306 | Privada (Cloud Map) |
+| `innovatech-mysql` | mysql:8 | 3306 | Privada (vía NLB interno) |
 
 ---
 
@@ -251,12 +268,13 @@ Se ejecuta en **push** a `main`, `develop`, `feature/*`, `fix/*` y en **pull req
 
 Se ejecuta **solo** en push a la rama **`deploy`**.
 
-1. Build multi-plataforma `linux/amd64` de las 3 imágenes
+1. Build `linux/amd64` de las 3 imágenes
 2. Push a **Amazon ECR** (tag `latest` + SHA del commit)
-3. `aws ecs update-service --force-new-deployment` en frontend y backends
-4. Espera estabilidad con `aws ecs wait services-stable`
-5. Verificación HTTP vía ALB (`/`, `/api/v1/ventas`, `/api/v1/despachos`)
-6. Resumen de tiempos del pipeline en logs
+3. Verifica que MySQL ECS esté estable (`aws ecs wait services-stable`)
+4. `aws ecs update-service --force-new-deployment` en frontend y backends
+5. Espera rollout COMPLETED de los servicios (hasta ~20 min)
+6. Verificación HTTP vía ALB (`/`, `/api/v1/ventas`, `/api/v1/despachos`)
+7. Resumen de tiempos del pipeline en logs
 
 ---
 
@@ -318,7 +336,8 @@ Métricas del pipeline: revisar el step *Resumen de metricas del pipeline* en [G
 
 - [x] Clúster **ECS Fargate** con Capacity Providers  
 - [x] VPC, subredes multi-AZ y Security Groups  
-- [x] Roles IAM (execution role + task role)  
+- [x] Roles IAM (execution role + task role vía `LabRole`)  
+- [x] **NLB interno** para conexión estable Back → MySQL  
 - [x] Despliegue Frontend + Backend desde **Amazon ECR**  
 - [x] Variables de entorno en Task Definitions  
 - [x] **Application Load Balancer** con acceso público al frontend  
@@ -347,8 +366,8 @@ Métricas del pipeline: revisar el step *Resumen de metricas del pipeline* en [G
 | Síntoma | Causa probable | Acción |
 |---------|----------------|--------|
 | Servicios ECS en `PENDING` | Sin imágenes en ECR | Ejecuta deploy o push manual a ECR |
-| Target group `unhealthy` | Backend aún iniciando | Espera 2–3 min; revisa logs CloudWatch |
-| 502 en ALB | MySQL no responde | Verifica servicio `innovatech-mysql` y Cloud Map |
+| Target group `unhealthy` | Backend aún iniciando | Espera 2–3 min (grace period 120–180 s); revisa logs CloudWatch |
+| 502 en ALB | MySQL no responde | Verifica servicio `innovatech-mysql`, NLB interno y logs `/ecs/innovatech/mysql` |
 | Deploy falla en verificación ALB | Secret `ECS_ALB_DNS_NAME` incorrecto | Actualiza con `terraform output alb_dns_name` |
 | Autoscaling no escala | Carga insuficiente | Usa `load-test-alb.sh` por 2+ minutos |
 
