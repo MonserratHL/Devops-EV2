@@ -17,6 +17,10 @@ Repositorio: [MonserratHL/Devops-EV2](https://github.com/MonserratHL/Devops-EV2)
 
 ## Diagrama de arquitectura (EP3 — ECS Fargate)
 
+![Diagrama de arquitectura AWS — ECS Fargate EP3](docs/arquitectura-aws.png)
+
+> Versión editable: [`docs/arquitectura-aws.svg`](docs/arquitectura-aws.svg) · Regenerar con `python docs/scripts/generate-architecture-diagram.py`
+
 ```mermaid
 flowchart TB
     U["Usuarios<br/>HTTP :80"] --> ALB
@@ -91,7 +95,8 @@ Devops-EV2/
 │   ├── etapa_2/                       # Terraform: VPC + EC2 (EP2, legacy)
 │   └── etapa_3/                       # Terraform: ECS Fargate + ALB (EP3)
 ├── docs/
-│   ├── arquitectura-aws.png           # Diagrama EP2 (referencia historica)
+│   ├── arquitectura-aws.png           # Diagrama EP3 ECS Fargate (PNG)
+│   ├── arquitectura-aws.svg           # Diagrama EP3 ECS Fargate (SVG)
 │   ├── arquitectura-aws.drawio
 │   └── scripts/
 │       └── load-test-alb.sh           # Simulacion de carga para autoscaling

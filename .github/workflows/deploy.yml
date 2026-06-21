@@ -71,23 +71,59 @@ jobs:
 
       - name: Redesplegar servicios ECS
         run: |
+          set -euo pipefail
+          CLUSTER="${{ env.ECS_CLUSTER }}"
+          MYSQL="${{ env.PROJECT_NAME }}-mysql"
           SERVICES=(
             "${{ env.PROJECT_NAME }}-frontend"
             "${{ env.PROJECT_NAME }}-backend-ventas"
             "${{ env.PROJECT_NAME }}-backend-despachos"
           )
+
+          echo "Verificando MySQL estable antes del redeploy..."
+          if ! aws ecs wait services-stable --cluster "${CLUSTER}" --services "${MYSQL}"; then
+            echo "MySQL no estable — revisar target group NLB y logs /ecs/${{ env.PROJECT_NAME }}/mysql"
+            aws ecs describe-services --cluster "${CLUSTER}" --services "${MYSQL}" \
+              --query 'services[0].events[0:5]' --output table
+            exit 1
+          fi
+
           for SERVICE in "${SERVICES[@]}"; do
             echo "Forzando nuevo despliegue: ${SERVICE}"
             aws ecs update-service \
-              --cluster "${{ env.ECS_CLUSTER }}" \
+              --cluster "${CLUSTER}" \
               --service "${SERVICE}" \
               --force-new-deployment \
               --output text > /dev/null
           done
-          echo "Esperando estabilidad de servicios..."
-          aws ecs wait services-stable \
-            --cluster "${{ env.ECS_CLUSTER }}" \
-            --services "${SERVICES[@]}"
+
+          echo "Esperando estabilidad de servicios (max ~20 min)..."
+          MAX_ATTEMPTS=80
+          for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+            STABLE=true
+            for SERVICE in "${SERVICES[@]}"; do
+              read -r ROLLOUT RUNNING DESIRED PENDING <<< "$(aws ecs describe-services \
+                --cluster "${CLUSTER}" \
+                --services "${SERVICE}" \
+                --query 'services[0].[deployments[?status==`PRIMARY`]|[0].rolloutState,runningCount,desiredCount,pendingCount]' \
+                --output text)"
+              if [ "${ROLLOUT:-}" != "COMPLETED" ] || [ "${RUNNING:-0}" != "${DESIRED:-0}" ] || [ "${PENDING:-0}" != "0" ]; then
+                STABLE=false
+                echo "  ${SERVICE}: rollout=${ROLLOUT:-unknown}, running=${RUNNING:-0}/${DESIRED:-0}, pending=${PENDING:-0}"
+              fi
+            done
+            if [ "${STABLE}" = "true" ]; then
+              echo "Todos los servicios estables en intento ${attempt}"
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "=== Timeout esperando estabilidad — diagnostico ==="
+          aws ecs describe-services --cluster "${CLUSTER}" --services "${SERVICES[@]}" \
+            --query 'services[].{name:serviceName,running:runningCount,desired:desiredCount,deployments:deployments,events:events[0:5]}' \
+            --output json
+          exit 1
 
       - name: Verificar aplicacion via ALB
         env:

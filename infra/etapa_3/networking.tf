@@ -154,6 +154,14 @@ resource "aws_security_group" "ecs_tasks" {
     self        = true
   }
 
+  ingress {
+    description = "Health checks NLB interno hacia MySQL"
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

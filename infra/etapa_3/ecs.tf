@@ -226,11 +226,12 @@ resource "aws_ecs_service" "mysql" {
 }
 
 resource "aws_ecs_service" "backend_ventas" {
-  name            = "${var.project_name}-backend-ventas"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.backend_ventas.arn
-  desired_count   = var.service_desired_count
-  launch_type     = "FARGATE"
+  name                               = "${var.project_name}-backend-ventas"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.backend_ventas.arn
+  desired_count                      = var.service_desired_count
+  launch_type                        = "FARGATE"
+  health_check_grace_period_seconds  = 180
 
   network_configuration {
     subnets          = aws_subnet.private[*].id
@@ -255,11 +256,12 @@ resource "aws_ecs_service" "backend_ventas" {
 }
 
 resource "aws_ecs_service" "backend_despachos" {
-  name            = "${var.project_name}-backend-despachos"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.backend_despachos.arn
-  desired_count   = var.service_desired_count
-  launch_type     = "FARGATE"
+  name                               = "${var.project_name}-backend-despachos"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.backend_despachos.arn
+  desired_count                      = var.service_desired_count
+  launch_type                        = "FARGATE"
+  health_check_grace_period_seconds  = 180
 
   network_configuration {
     subnets          = aws_subnet.private[*].id
@@ -284,11 +286,12 @@ resource "aws_ecs_service" "backend_despachos" {
 }
 
 resource "aws_ecs_service" "frontend" {
-  name            = "${var.project_name}-frontend"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.frontend.arn
-  desired_count   = var.service_desired_count
-  launch_type     = "FARGATE"
+  name                               = "${var.project_name}-frontend"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.frontend.arn
+  desired_count                      = var.service_desired_count
+  launch_type                        = "FARGATE"
+  health_check_grace_period_seconds  = 120
 
   network_configuration {
     subnets          = aws_subnet.private[*].id
