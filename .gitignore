@@ -1,18 +1,34 @@
-# Ignorar todo excepto proyecto semestral y CI/CD
+# Ignorar todo excepto codigo del proyecto y CI/CD
 *
 !.gitignore
 !README.md
+!GITFLOW.md
+!.env.example
+!docker-compose.yml
+!backend/
+!backend/**
+!frontend/
+!frontend/**
+!infra/
+!infra/**
 !docs/
 !docs/**
-!proyecto semestral/
-!proyecto semestral/**
+!scripts/
+!scripts/**
 !.github/
 !.github/**
+
+# Repositorios de referencia (no subir)
+academia-302d-main/
+videojuegos-302d-ref/
+
+# Entornos virtuales locales
+.venv-diagram/
+.venv-pdf/
 
 # Archivos de sistema y secretos
 .DS_Store
 *.pdf
-academia-302d-main/
 .env
 *.pem
 *.tfstate
@@ -20,8 +36,8 @@ academia-302d-main/
 .terraform/
 .terraform.lock.hcl
 
-# Dentro de proyecto semestral
-proyecto semestral/**/.DS_Store
-proyecto semestral/**/node_modules/
-proyecto semestral/**/target/
-proyecto semestral/**/.env
+# Dependencias y artefactos de build
+**/.DS_Store
+**/node_modules/
+**/target/
+**/.env

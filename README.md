@@ -79,24 +79,27 @@ flowchart TB
 ```
 Devops-EV2/
 ├── README.md                          # Documentacion principal (esta pagina)
+├── GITFLOW.md                         # Estrategia de ramas Git
+├── docker-compose.yml                 # Stack local (MySQL + backends + frontend)
+├── .env.example
+├── backend/
+│   ├── ventas/                        # API Spring Boot ventas (:8080)
+│   └── despachos/                     # API Spring Boot despachos (:8081)
+├── frontend/                          # React + Vite + nginx
+├── infra/
+│   ├── etapa_1/                       # Terraform: ECR
+│   ├── etapa_2/                       # Terraform: VPC + EC2 (EP2, legacy)
+│   └── etapa_3/                       # Terraform: ECS Fargate + ALB (EP3)
 ├── docs/
 │   ├── arquitectura-aws.png           # Diagrama EP2 (referencia historica)
 │   ├── arquitectura-aws.drawio
 │   └── scripts/
 │       └── load-test-alb.sh           # Simulacion de carga para autoscaling
-├── .github/workflows/
-│   ├── ci.yml                         # Integracion continua
-│   └── deploy.yml                     # Despliegue continuo ECS
-└── proyecto semestral/
-    ├── docker-compose.yml
-    ├── .env.example
-    ├── infra/
-    │   ├── etapa_1/                   # Terraform: ECR
-    │   ├── etapa_2/                   # Terraform: VPC + EC2 (EP2, legacy)
-    │   └── etapa_3/                   # Terraform: ECS Fargate + ALB (EP3)
-    ├── back-Ventas_SpringBoot/
-    ├── back-Despachos_SpringBoot/
-    └── front_despacho/
+├── scripts/
+│   └── docker-compose.ec2-backend.yml # Compose legacy para EC2 (EP2)
+└── .github/workflows/
+    ├── ci.yml                         # Integracion continua
+    └── deploy.yml                     # Despliegue continuo ECS
 ```
 
 ---
@@ -122,7 +125,6 @@ Devops-EV2/
 ### 1. Ejecución local (Docker Compose)
 
 ```bash
-cd "proyecto semestral"
 cp .env.example .env
 docker compose up -d --build
 ```
@@ -134,7 +136,7 @@ Acceso: **http://localhost**
 **Etapa 1 — Repositorios ECR**
 
 ```bash
-cd "proyecto semestral/infra/etapa_1"
+cd infra/etapa_1
 terraform init
 terraform apply
 ```
@@ -348,7 +350,7 @@ Métricas del pipeline: revisar el step *Resumen de metricas del pipeline* en [G
 ### Verificar APIs desde tu máquina
 
 ```bash
-ALB=$(cd "proyecto semestral/infra/etapa_3" && terraform output -raw alb_dns_name)
+ALB=$(cd infra/etapa_3 && terraform output -raw alb_dns_name)
 curl "http://${ALB}/api/v1/ventas"
 curl "http://${ALB}/api/v1/despachos"
 ```

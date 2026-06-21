@@ -41,7 +41,7 @@ jobs:
           docker build --platform linux/amd64 \
             -t "${IMAGE}:latest" \
             -t "${IMAGE}:${{ github.sha }}" \
-            "./proyecto semestral/back-Ventas_SpringBoot/Springboot-API-REST"
+            "./backend/ventas"
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 
@@ -53,7 +53,7 @@ jobs:
           docker build --platform linux/amd64 \
             -t "${IMAGE}:latest" \
             -t "${IMAGE}:${{ github.sha }}" \
-            "./proyecto semestral/back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO"
+            "./backend/despachos"
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 
@@ -65,7 +65,7 @@ jobs:
           docker build --platform linux/amd64 \
             -t "${IMAGE}:latest" \
             -t "${IMAGE}:${{ github.sha }}" \
-            "./proyecto semestral/front_despacho"
+            "./frontend"
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:${{ github.sha }}"
 

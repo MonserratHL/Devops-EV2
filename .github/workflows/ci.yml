@@ -21,15 +21,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar archivo de entorno
-        run: cp "proyecto semestral/.env.example" "proyecto semestral/.env"
+        run: cp .env.example .env
 
       - name: Construir imagenes Docker
-        run: |
-          docker compose -f "proyecto semestral/docker-compose.yml" build
+        run: docker compose build
 
       - name: Levantar servicios y verificar salud
         run: |
-          docker compose -f "proyecto semestral/docker-compose.yml" up -d
+          docker compose up -d
           echo "Esperando APIs Spring Boot (puede tardar hasta 3 min)..."
           for i in $(seq 1 18); do
             if curl -sf http://localhost/api/v1/ventas > /dev/null \
@@ -41,11 +40,11 @@ jobs:
             sleep 10
           done
           echo "=== Logs backend ventas ==="
-          docker compose -f "proyecto semestral/docker-compose.yml" logs backend-ventas --tail 40
+          docker compose logs backend-ventas --tail 40
           echo "=== Logs backend despachos ==="
-          docker compose -f "proyecto semestral/docker-compose.yml" logs backend-despachos --tail 40
+          docker compose logs backend-despachos --tail 40
           exit 1
 
       - name: Detener contenedores
         if: always()
-        run: docker compose -f "proyecto semestral/docker-compose.yml" down -v
+        run: docker compose down -v

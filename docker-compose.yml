@@ -19,7 +19,7 @@ services:
 
   backend-ventas:
     build:
-      context: ./back-Ventas_SpringBoot/Springboot-API-REST
+      context: ./backend/ventas
     image: innovatech-backend-ventas:1.0
     container_name: innovatech-backend-ventas
     restart: unless-stopped
@@ -38,7 +38,7 @@ services:
 
   backend-despachos:
     build:
-      context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+      context: ./backend/despachos
     image: innovatech-backend-despachos:1.0
     container_name: innovatech-backend-despachos
     restart: unless-stopped
@@ -57,7 +57,7 @@ services:
 
   frontend:
     build:
-      context: ./front_despacho
+      context: ./frontend
     image: innovatech-frontend:1.0
     container_name: innovatech-frontend
     restart: unless-stopped
