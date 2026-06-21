@@ -60,6 +60,8 @@ services:
       context: ./frontend
     image: innovatech-frontend:1.0
     container_name: innovatech-frontend
+    environment:
+      NGINX_COMPOSE_MODE: "1"
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-80}:8080"

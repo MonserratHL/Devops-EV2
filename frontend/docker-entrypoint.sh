@@ -6,9 +6,12 @@ if [ -n "$BACKEND_HOST" ]; then
   export BACKEND_HOST
   envsubst '$BACKEND_HOST' < /etc/nginx/templates/nginx.ec2.conf.template \
     > /etc/nginx/conf.d/default.conf
-else
+elif [ "${NGINX_COMPOSE_MODE:-}" = "1" ]; then
   echo "Configurando nginx para Docker Compose local"
   cp /etc/nginx/templates/nginx.local.conf /etc/nginx/conf.d/default.conf
+else
+  echo "Configurando nginx para ALB/ECS (solo estaticos; APIs en el balanceador)"
+  cp /etc/nginx/templates/nginx.alb.conf /etc/nginx/conf.d/default.conf
 fi
 
 chown 101:101 /etc/nginx/conf.d/default.conf
